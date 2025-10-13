@@ -1,0 +1,62 @@
+from __future__ import annotations
+from typing import Protocol, Any
+from .types import (
+    Interaction,
+    ToolCall,
+    PolicyDecision,
+    ToolResult,
+    TelemetryEvent,
+    Intent,
+    Plan,
+)
+
+
+class DataSource(Protocol):
+    """Abstracts access to domain data (orders, customers, tickets)."""
+    def get_order(self, order_id: str) -> dict | None: ...
+
+
+class LLMProvider(Protocol):
+    """Low-level LLM interface. Concrete providers wrap OpenAI/Anthropic/etc.
+
+    For M1, we primarily use `generate` to support LLM-based classification.
+    `route` exists for backward compatibility but is not used here.
+    """
+
+    def generate(self, messages: list[dict], response_format: dict | None = None) -> dict: ...
+
+    def route(self, interaction: Interaction, history: list[dict]) -> ToolCall: ...
+
+
+class PolicyEngine(Protocol):
+    def validate(
+        self, call: ToolCall, interaction: Interaction, history: list[dict]
+    ) -> PolicyDecision: ...
+
+
+class ToolExecutor(Protocol):
+    """Executes registered tool handlers with validated parameters."""
+    def register(self, tool_name: str, handler) -> None: ...
+    def execute(self, call: ToolCall) -> ToolResult: ...
+
+
+class TelemetrySink(Protocol):
+    """Records structured events for observability and evaluation."""
+    def record(self, event: TelemetryEvent) -> None: ...
+
+
+class IntentsRegistry(Protocol):
+    """Provides the set of intents eligible for the current context."""
+    def get_eligible(self, context: dict) -> list[Intent]: ...
+
+
+class IntentClassifier(Protocol):
+    """Maps a user interaction to an eligible intent and extracts slot values."""
+    def classify(
+        self, interaction: Interaction, intents: list[Intent], history: list[dict]
+    ) -> tuple[Intent | None, dict]: ...
+
+
+class Planner(Protocol):
+    """Converts a chosen intent + slots into an executable plan (steps)."""
+    def plan(self, intent: Intent, interaction: Interaction, slots: dict) -> Plan: ...

@@ -1,0 +1,13 @@
+intents:
+  - id: order_status
+    description: Retrieve shipping/delivery info for a given order.
+    required_slots: [order_id]
+    tool: check_order_status
+    slot_mapping:
+      order_id: "(?i)\bO-\d+\b"
+    constraints:
+      channels: [chat]
+      rollout: 100
+    redaction:
+      slots: [order_id]
+

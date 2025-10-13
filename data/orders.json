@@ -1,0 +1,17 @@
+[
+  {
+    "order_id": "O-12345",
+    "status": "shipped",
+    "carrier": "UPS",
+    "eta": "2025-10-20",
+    "customer_id": "C-1"
+  },
+  {
+    "order_id": "O-99999",
+    "status": "delivered",
+    "carrier": "USPS",
+    "delivered_at": "2025-10-10",
+    "customer_id": "C-2"
+  }
+]
+
