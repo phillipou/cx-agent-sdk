@@ -8,10 +8,13 @@ from src.core.types import Interaction, Intent
 class LLMIntentClassifier(IntentClassifier):
     """Classifies the user's intent and extracts slots using an LLM provider.
 
-    This builds a lightweight prompt with:
+    Prompt structure:
       - The user message and recent history (if any)
       - The list of eligible intents (names + descriptions)
-    The provider is expected to return a JSON-like dict: {intent_id, slots, missing_slots, confidence}.
+
+    Provider contract:
+      - Returns a JSON-like dict: {"intent_id", "slots", "missing_slots", "confidence"}.
+      - When the provider supports it, we request JSON mode via `response_format`.
     """
 
     def __init__(self, llm: LLMProvider) -> None:
@@ -40,11 +43,11 @@ class LLMIntentClassifier(IntentClassifier):
             },
         ]
 
-        result = self.llm.generate(messages, response_format=None)
+        # Ask the provider for JSON output so parsing is reliable.
+        result = self.llm.generate(messages, response_format={"type": "json_object"})
         intent_id = result.get("intent_id")
         slots = result.get("slots", {}) or {}
 
         # Map intent_id back to the full intent object
         intent = next((it for it in intents if it.get("id") == intent_id), None)
         return intent, slots
-

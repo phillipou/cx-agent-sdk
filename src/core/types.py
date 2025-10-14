@@ -1,4 +1,9 @@
 from __future__ import annotations
+"""Shared type definitions used across the agent.
+
+The project favors simple, explicit `TypedDict` structures for message passing
+between components. This keeps adapters loosely coupled and easy to test.
+"""
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, TypedDict, Literal
 

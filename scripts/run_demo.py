@@ -3,9 +3,11 @@ from __future__ import annotations
 
 """Tiny demo that wires the agent components and runs a single interaction.
 
-This uses an LLM-based classifier (via a fake provider) to keep things deterministic
-and cost-free during development, while exercising the same code paths a real
-provider would.
+This version uses a real OpenAI provider through the `OpenAIProvider` adapter.
+Requirements:
+  - `pip install -r requirements.txt`
+  - Environment: `OPENAI_API_KEY` (required), `OPENAI_MODEL` (optional; defaults
+    to `gpt-4o-mini`).
 """
 
 from src.core.types import Interaction
@@ -15,7 +17,7 @@ from src.adapters.policy.null_policy import NullPolicyEngine
 from src.adapters.telemetry.print_sink import PrintSink
 from src.adapters.executor.local_executor import LocalExecutor
 from src.adapters.intents.yaml_registry import YAMLIntentsRegistry
-from src.adapters.llm.fake_provider import FakeLLMProvider
+from src.adapters.llm.openai_provider import OpenAIProvider
 from src.adapters.classifier.llm_intent_classifier import LLMIntentClassifier
 from src.adapters.planner.simple_planner import SimplePlanner
 from src.tools.check_order_status import make_check_order_status
@@ -31,9 +33,9 @@ def main() -> None:
     policy = NullPolicyEngine()
     telemetry = PrintSink()
 
-    # Intents + classifier (LLM-based via fake provider)
+    # Intents + classifier (LLM-based via OpenAI)
     intents = YAMLIntentsRegistry("config/intents.yaml")
-    llm = FakeLLMProvider()
+    llm = OpenAIProvider()
     classifier = LLMIntentClassifier(llm)
     planner = SimplePlanner()
 

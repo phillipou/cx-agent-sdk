@@ -1,4 +1,10 @@
 from __future__ import annotations
+"""Interface definitions for the agent's swappable primitives.
+
+These `Protocol`s define boundaries so implementations can be swapped without
+changing orchestration logic (e.g., JSON vs. SQL data source, different LLMs,
+local vs. remote executors, etc.).
+"""
 from typing import Protocol, Any
 from .types import (
     Interaction,

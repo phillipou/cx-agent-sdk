@@ -1,4 +1,11 @@
 from __future__ import annotations
+"""Simple planner.
+
+Translates a chosen intent + slots into a small, linear plan:
+  1) pre `Respond` message (tell the user what will happen)
+  2) `ToolCall` with the chosen tool and extracted params
+  3) post `Respond` template containing a `{summary}` placeholder
+"""
 from typing import List
 from src.core.interfaces import Planner
 from src.core.types import Intent, Interaction, Plan, Respond, ToolCall
@@ -31,4 +38,3 @@ class SimplePlanner(Planner):
         steps.append(Respond(type="respond", when="post", message=post_msg))
 
         return Plan(intent_id=intent_id, steps=steps)
-

@@ -1,8 +1,8 @@
 # **PRD: CX Agent SDK**
 
 **Author:** Phil Ou  
- **Status:** Final  
- **Created:** October 13, 2025
+**Status:** Final  
+**Created:** October 13, 2025
 
 ---
 
@@ -26,7 +26,7 @@
 ### **In Scope**
 
 1. **Build a working agent** that handles customer support interactions with multi-turn conversations and memory  
-2. **Implement 5 core primitives** (DataSource, LLMProvider, PolicyEngine, ToolExecutor, TelemetrySink) with swappable implementations  
+2. **Implement 6 core primitives** (ConversationMemory, DataSource, LLMProvider, PolicyEngine, ToolExecutor, TelemetrySink) with swappable implementations  
 3. **Create mock integrations** that simulate real external systems (Shopify-like order APIs, Zendesk-like ticketing)  
 4. **Create an evaluation harness** that runs golden test cases with both deterministic and LLM-as-judge evaluation  
 5. **Build interfaces** (dashboard for results visualization, chat UI for live testing)  
@@ -41,7 +41,7 @@
 * Agent resolves 12/15 golden test cases correctly (deterministic eval)  
 * LLM-as-judge scores agent responses ≥80% on semantic correctness  
 * Multi-turn conversations maintain context across 3+ exchanges  
-* Can swap LLM provider (OpenAI → Anthropic) in \<5 lines of code  
+* Can swap LLM provider (OpenAI → Anthropic) in <5 lines of code  
 * Can swap data source (JSON → SQLite → Mock API) without changing AgentRouter  
 * Policy engine supports arbitrary rule complexity (composable conditions)  
 * Codebase has 3+ ADRs explaining key design decisions
@@ -101,10 +101,10 @@
 
 **Evaluation**
 
-* FR30: Load golden test set (YAML file with interactions \+ expected outcomes)  
+* FR30: Load golden test set (YAML file with interactions + expected outcomes)  
 * FR31: Support both single-shot and multi-turn test scenarios  
 * FR32: Run agent on all test cases  
-* FR33: **Deterministic eval:** Compare actual vs expected (tool name \+ params within acceptable range)  
+* FR33: **Deterministic eval:** Compare actual vs expected (tool name + params within acceptable range)  
 * FR34: **LLM-as-judge eval:** Use GPT-4 to score semantic correctness of resolutions  
 * FR35: Calculate containment rate (% resolved without escalation)  
 * FR36: Log results to persistent storage (SQLite) with both eval scores
@@ -128,10 +128,10 @@
 
 * FR46: Define eligible intents in `config/intents.yaml` (id, description, required slots, tool mapping, constraints)  
 * FR47: Determine eligible intents per interaction based on context (channel, rollout, customer tier)  
-* FR48: Classify the user message to a supported intent (or none) using LLM or heuristics  
+* FR48: Classify the user message to a supported intent (or none) using LLM  
 * FR49: Extract required slots (e.g., `order_id`) from text or history; prompt user when missing  
-* FR50: Produce a plan (one or more steps) from the selected intent; M1 supports a single tool step  
-* FR51: Support `ask_user` planning step for missing slots, to be expanded in later milestones  
+* FR50: Produce a plan (ToolCall or AskUser) from the selected intent using LLM  
+* FR51: Support `AskUser` planning step for missing slots  
 * FR52: Expose intent and plan in telemetry and UIs (trace view)  
 * FR53: Unknown/disabled intents result in safe fallback (clarify, create ticket, or escalate)
 
@@ -139,8 +139,8 @@
 
 **Composability**
 
-* Each primitive (DataSource, LLMProvider, PolicyEngine, ToolExecutor, TelemetrySink) is independently swappable  
-* Adding a new tool is straightforward (define schema \+ implementation)  
+* Each primitive (ConversationMemory, DataSource, LLMProvider, PolicyEngine, ToolExecutor, TelemetrySink) is independently swappable  
+* Adding a new tool is straightforward (define schema + implementation)  
 * Clear separation: `/core` (protocols), `/implementations` (concrete classes), `/agent` (orchestration)
 
 **Policy Flexibility**
@@ -168,12 +168,19 @@
 * Streamlit UIs launch with single command  
 * README has clear quickstart (setup → run → interpret results)
 
+**Intent-Driven Planning**
+
+* Constrain behavior via an explicit intents registry loaded from config  
+* Separate concerns: intent eligibility → classification → planning → policy → execution  
+* Slot filling is explicit; user prompts occur only when required data is missing  
+* Intents and plans are inspectable and logged for evaluation
+
 ### **3.3 Technical Constraints**
 
 **Stack**
 
 * Python 3.11+  
-* OpenAI API for LLM (native function calling)  
+* OpenAI API for LLM (native function calling, structured outputs)  
 * SQLite for data persistence  
 * Streamlit for UI  
 * PyYAML for config  
@@ -184,33 +191,52 @@
 * Mock orders dataset (JSON/SQLite) with 20-30 synthetic orders  
 * Orders cover edge cases (old orders, high-value, missing IDs)  
 * Golden test set (YAML) with single-shot and multi-turn scenarios  
-* Mock API responses for integration simulation
+* Mock API responses for integration simulation  
 * Intents configuration file `config/intents.yaml` checked into source control
 
 ---
 
 ## **4\. Milestones**
 
-### **Milestone 1: Core Primitives & Basic Agent**
+### **Milestone 1: Core Primitives & Multi-Turn Agent**
 
-**Goal:** Get a single interaction resolved end-to-end through all 5 primitives
+**Goal:** Get multi-turn interactions resolved end-to-end through all 6 primitives with LLM-based classification and planning
 
 **Deliverables:**
 
-* Define 5 protocol interfaces in `/core` (DataSource, LLMProvider, PolicyEngine, ToolExecutor, TelemetrySink)  
+* Define 6 protocol interfaces in `/core`:  
+  * `ConversationMemory` (get_history, append, clear)  
+  * `DataSource` (get_order, get_customer)  
+  * `LLMProvider` (generate, get_cost) - abstracts OpenAI/Anthropic/etc.  
+  * `PolicyEngine` (validate)  
+  * `ToolExecutor` (execute)  
+  * `TelemetrySink` (record)  
 * Implement minimum viable versions:  
-  * `JSONDataSource` (reads mock orders)  
-  * `OpenAIProvider` (calls OpenAI API with function calling)  
-  * `NullPolicyEngine` (allows everything, logs nothing — just a passthrough)  
+  * `InMemoryConversationMemory` (simple dict)  
+  * `JSONDataSource` (reads `data/orders.json`)  
+  * `OpenAIProvider` (calls OpenAI API with function calling and structured outputs)  
+  * `NullPolicyEngine` (allows everything - passthrough)  
   * `LocalExecutor` (executes Python functions directly)  
   * `PrintSink` (prints events to console)  
-* Wire `AgentRouter` that orchestrates all primitives and intents/planning  
+* Implement supporting components:  
+  * `IntentsRegistry` (loads from `config/intents.yaml`, filters by context)  
+  * `IntentClassifier` (uses LLMProvider to classify intent and extract slots)  
+  * `Planner` (uses LLMProvider to generate ToolCall or AskUser)  
+* Wire `AgentRouter` that orchestrates all primitives  
 * Create 1 tool: `check_order_status(order_id)`  
-* Add intents: `config/intents.yaml` with `order_status` intent (slots: `order_id`)  
-* Add simple `IntentClassifier`/`Planner` (heuristic/regex) that produces a single-step plan  
-* Test: Agent receives "Where's my order O-12345?" → calls tool → returns status
+* Create `config/intents.yaml` with `order_status` intent  
+* Create `data/orders.json` with sample orders (shipped, delivered, edge cases)  
+* Implement telemetry with 10 stages (received, history_loaded, intents_eligible, intent_classified, plan_created, plan_type, policy_check, tool_execute, response_generated, memory_updated)  
+* Test single-turn: "Where's my order O-12345?" → returns status  
+* Test multi-turn: "Check my order" → "What's your order ID?" → "O-12345" → returns status
 
-**Success:** One interaction flows through: input → LLM → tool execution → output
+**Success:**  
+✅ Single-turn works with complete information  
+✅ Multi-turn works with slot collection via AskUser  
+✅ LLM-based classification and planning (no regex heuristics)  
+✅ Conversation history stored and used for context  
+✅ All 10 telemetry stages logged with structured payloads  
+✅ Can swap OpenAIProvider for MockLLMProvider in tests
 
 ---
 
@@ -220,21 +246,21 @@
 
 **Deliverables:**
 
-* Create mock orders dataset (20-30 orders in JSON) covering:  
-  * Normal orders (shipped, delivered)  
+* Expand mock orders dataset to 20-30 orders covering:  
+  * Normal orders (shipped, delivered, in_transit)  
   * Edge cases (old orders, high-value, missing IDs, already refunded)  
   * Different customer tiers (standard, VIP)  
-* Implement 4 tools with structured responses:  
-  * `check_order_status(order_id)`  
+* Implement 3 additional tools:  
   * `issue_refund(order_id, amount, reason)`  
   * `create_ticket(customer_id, issue_type, description)`  
   * `escalate_to_human(interaction_id, reason, context)`  
 * Add error handling (order not found, invalid state transitions)  
-* Expand intents and planning:  
-  * `refund_request` (slots: `order_id`, `amount`, `reason`) → plan may include `ask_user` for missing slots  
-  * `create_ticket_intent` (slots: `issue_type`, `description`)  
-  * Update classifier to choose among multiple intents and slot fill from history  
-* Test each tool in isolation with mock data
+* Expand `config/intents.yaml` with new intents:  
+  * `refund_request` (slots: order_id, amount, reason)  
+  * `create_ticket_intent` (slots: issue_type, description)  
+  * `escalate` (no required slots)  
+* Test each tool in isolation with mock data  
+* Test multi-turn scenarios across multiple intents
 
 **Success:** All 4 tools work with realistic mock data and handle errors gracefully
 
@@ -253,7 +279,7 @@
   * Maximum refund amount ($500)  
   * Order age requirement (within 30 days)  
   * VIP customer override (higher limits)  
-  * Escalation triggers (angry sentiment, policy violations)  
+  * Escalation triggers (policy violations)  
 * Replace `NullPolicyEngine` with `YAMLPolicyEngine` in AgentRouter  
 * Add policy violation logging to telemetry  
 * Test: Agent blocks out-of-policy refund, logs violation, escalates
@@ -268,14 +294,14 @@
 
 **Deliverables:**
 
-* Create golden test set (15 single-shot interactions in YAML) with expected outcomes:  
-  * Tool name  
-  * Parameter ranges (e.g., refund amount ±$5)  
-  * Expected escalations  
-* Build `EvaluationRunner` that:  
+* Create golden test set (15 test cases in YAML):  
+  * 10 single-turn scenarios  
+  * 5 multi-turn scenarios  
+  * Expected: intent_id, tool_name, params (with acceptable ranges)  
+* Build `EvaluationRunner`:  
   * Loads test set  
-  * Runs agent on each interaction  
-  * Compares actual vs expected (intent, plan steps, tool \+ params)  
+  * Runs agent on each case  
+  * Compares actual vs expected  
   * Calculates pass/fail, containment rate  
 * Implement `SQLiteSink` to replace `PrintSink`  
 * Log all eval results to database  
@@ -291,14 +317,14 @@
 
 **Deliverables:**
 
-* Build `LLMJudge` class that:  
-  * Takes interaction \+ agent response  
+* Build `LLMJudge` class:  
+  * Takes interaction + agent response  
   * Prompts GPT-4 to score (0-10) on: correctness, tone, completeness  
-  * Returns structured score \+ reasoning  
-* Update eval harness to run both deterministic \+ LLM judge  
+  * Returns structured score + reasoning  
+* Update eval harness to run both deterministic + LLM judge  
 * Store both scores in SQLite  
 * Update golden test set with semantic correctness criteria  
-* Generate eval report showing:  
+* Generate eval report:  
   * Deterministic pass rate  
   * Average LLM judge score  
   * Per-test breakdown
@@ -307,53 +333,30 @@
 
 ---
 
-### **Milestone 6: Multi-Turn Conversations & Memory**
-
-**Goal:** Enable agent to handle conversations with context across multiple exchanges
-
-**Deliverables:**
-
-* Implement `ConversationMemory` component:  
-  * Store message history per session  
-  * Retrieve relevant context for new messages  
-  * Support memory reset  
-* Update `AgentRouter` to include conversation history in LLM calls  
-* Add memory-aware policy rules (e.g., escalate if user repeats question)  
-* Create 5 multi-turn test scenarios in golden set:  
-  * User asks for order status, then requests refund  
-  * User provides incomplete info, agent asks follow-up, user responds  
-  * User changes request mid-conversation  
-* Update eval harness to support multi-turn scenarios  
-* Test: 3+ turn conversation maintains context
-
-**Success:** Agent handles multi-turn conversations, references previous exchanges appropriately
-
----
-
-### **Milestone 7: Mock Integrations**
+### **Milestone 6: Mock Integrations**
 
 **Goal:** Simulate real external systems (Shopify, Zendesk) with realistic behavior
 
 **Deliverables:**
 
-* Build `MockShopifyAPI` class:  
+* Build `MockShopifyAPI`:  
   * CRUD operations on orders  
   * Simulated latency (100-500ms)  
   * Rate limiting (10 req/sec)  
-  * Error responses (404, 429, 500\)  
-* Build `MockZendeskAPI` class:  
+  * Error responses (404, 429, 500)  
+* Build `MockZendeskAPI`:  
   * Create, update, search tickets  
   * Simulated latency  
   * Realistic ticket lifecycle  
 * Create `APIDataSource` that wraps mock APIs  
-* Update tools to use API data source instead of direct JSON  
+* Update tools to support API-based data source  
 * Test: Agent works with API-based data source, handles errors
 
 **Success:** Can swap JSON → SQLite → Mock API without changing AgentRouter
 
 ---
 
-### **Milestone 8: Multiple Data Sources**
+### **Milestone 7: Multiple Data Sources**
 
 **Goal:** Prove DataSource abstraction works across implementations
 
@@ -365,7 +368,26 @@
 * Update README with instructions for switching data sources  
 * Write ADR explaining DataSource abstraction design
 
-**Success:** Can swap data sources in \<5 lines, agent works identically with all three
+**Success:** Can swap data sources in <5 lines, agent works identically with all three
+
+---
+
+### **Milestone 8: Dashboard**
+
+**Goal:** Visualize eval results and interaction traces
+
+**Deliverables:**
+
+* Streamlit app reading from SQLite  
+* Results table (sortable, filterable)  
+* Containment rate chart over time  
+* Individual interaction trace viewer:  
+  * Show all 10 telemetry stages  
+  * Display intent classification, plan creation, policy checks  
+  * Show conversation history for multi-turn scenarios  
+* Launch: `streamlit run src/ui/dashboard.py`
+
+**Success:** Dashboard loads <2 seconds, shows all eval results with drill-down capability
 
 ---
 
@@ -377,7 +399,11 @@
 
 * Streamlit chat UI with message input  
 * Real-time agent responses  
-* Inline display of intent selection, plan steps, tool calls, policy decisions, reasoning  
+* Inline display of:  
+  * Intent classification results  
+  * Plan (ToolCall or AskUser)  
+  * Policy decisions  
+  * Tool execution results  
 * Conversation memory display (show history)  
 * Session reset button  
 * Launch: `streamlit run src/ui/chat.py`
@@ -386,48 +412,31 @@
 
 ---
 
-### **Milestone 10: Dashboard**
-
-**Goal:** Visualize eval results and interaction traces
-
-**Deliverables:**
-
-* Streamlit app reading from SQLite  
-* Results table (sortable, filterable)  
-* Containment rate chart over time  
-* Individual interaction trace viewer (LLM → policy → tool → result)  
-* Multi-turn conversation viewer  
-* Launch: `streamlit run src/ui/dashboard.py`
-
-**Success:** Dashboard loads \<2 seconds, shows all eval results with drill-down capability
-
----
-
-### **Milestone 11: Documentation & Polish**
+### **Milestone 10: Documentation & Polish**
 
 **Goal:** Make project portfolio-ready
 
 **Deliverables:**
 
 * Write 5+ ADRs:  
-  * ADR-001: Why these 5 primitives  
-  * ADR-002: Policy engine design (composable rules)  
-  * ADR-003: Hybrid evaluation approach  
-  * ADR-004: Memory/context management design  
-  * ADR-005: Mock integration architecture  
+  * ADR-001: Why these 6 primitives (including ConversationMemory and LLMProvider)  
+  * ADR-002: Intent-driven architecture (Registry, Classifier, Planner)  
+  * ADR-003: Policy engine design (composable rules)  
+  * ADR-004: Hybrid evaluation approach (deterministic + LLM-as-judge)  
+  * ADR-005: Multi-turn conversation and memory management  
+  * ADR-006: Mock integration architecture  
 * README with:  
   * Quickstart (setup → run → interpret)  
-  * Architecture overview  
-**Intent-Driven Planning**
-
-* Constrain behavior via an explicit intents registry loaded from config  
-* Separate concerns: intent eligibility → classification → planning → policy → execution  
-* Slot filling is explicit; user prompts occur only when required data is missing  
-* Intents and plans are inspectable and logged for evaluation
+  * Architecture overview (6 primitives + supporting components)  
   * Adding new tools guide  
-  * Swapping primitives guide  
+  * Adding new intents guide  
+  * Swapping primitives guide (LLMProvider, DataSource)  
   * Multi-turn conversation design  
 * Code cleanup: docstrings, type hints, comments  
-* Example outputs in `/docs` (sample eval run, trace screenshots, multi-turn examples)
+* Example outputs in `/docs`:  
+  * Sample eval run results  
+  * Trace screenshots from dashboard  
+  * Multi-turn conversation examples  
+  * Intent classification examples
 
-**Success:** Someone unfamiliar can clone, setup, and run eval in \<15 minutes
+**Success:** Someone unfamiliar can clone, setup, and run eval in <15 minutes

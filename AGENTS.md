@@ -15,9 +15,9 @@
   - `adapters/telemetry/` (e.g., `print_sink.py`)
   - `adapters/executor/` (e.g., `local_executor.py`)
   - `adapters/intents/` (e.g., `yaml_registry.py`)
-  - `adapters/classifier/` (`llm_intent_classifier.py`, optional `heuristic_classifier.py`)
+  - `adapters/classifier/` (`llm_intent_classifier.py`)
   - `adapters/planner/` (`simple_planner.py`)
-  - `adapters/llm/` (`fake_provider.py`, real providers later)
+  - `adapters/llm/` (`openai_provider.py`)
   - `src/tools/` (tool schemas + functions)
   - `src/ui/` (Streamlit apps: `chat.py`, `dashboard.py`)
 - `config/`: Runtime configs (e.g., `policies.yaml`).
@@ -39,6 +39,11 @@
 - Seed SQLite (when added): `python scripts/seed_database.py`
 - Launch chat UI: `streamlit run src/ui/chat.py`
 - Launch dashboard: `streamlit run src/ui/dashboard.py`
+
+### LLM Setup
+- Set `OPENAI_API_KEY` in your environment.
+- Optional: set `OPENAI_MODEL` (defaults to `gpt-4o-mini`).
+- The demo uses the OpenAI provider; see `scripts/run_demo.py`.
 
 ## Coding Style & Naming Conventions
 - Python 3.11+, PEP 8, type hints required. Use docstrings on public APIs.
@@ -68,4 +73,4 @@
 ## Architecture Overview (Agent-Specific)
 - Five swappable primitives power the Agent: DataSource, LLMProvider, PolicyEngine, ToolExecutor, TelemetrySink.
 - AgentRouter orchestrates: classify → validate (policy) → execute tool → log → respond; supports multi-turn memory.
-- Start locally with JSON/SQLite mocks; swap implementations without touching orchestration.
+- Start locally with JSON mocks and OpenAI for classification; swap implementations without touching orchestration.

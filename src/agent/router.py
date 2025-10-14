@@ -1,4 +1,13 @@
 from __future__ import annotations
+"""Agent router orchestrates the end-to-end flow.
+
+Flow summary:
+  received → intents_eligible → intent_classified → plan_created → plan_communicated
+  → policy_check → tool_execute → respond
+
+This module keeps memory in-process (by session id) and emits structured
+telemetry at each stage via the provided `TelemetrySink`.
+"""
 from typing import List
 from src.core.types import (
     Interaction,
@@ -19,9 +28,10 @@ from src.core.interfaces import (
 
 
 class AgentRouter:
-    """Coordinates the end-to-end flow: intents → classify → plan → policy → tools → respond.
+    """Coordinates: intents → classify → plan → policy → tools → respond.
 
-    M1 keeps state in memory and emits telemetry so behavior is easy to follow.
+    Minimal state and simple summarization make behavior easy to inspect while
+    preserving component boundaries (policy, tools, telemetry, etc.).
     """
     def __init__(
         self,
@@ -41,6 +51,13 @@ class AgentRouter:
         self._history: dict[str, List[dict]] = {}
 
     def handle(self, interaction: Interaction) -> AgentResponse:
+        """Process a single user interaction and return a response.
+
+        - Determines eligible intents for the context.
+        - Classifies intent and extracts slots via the configured classifier.
+        - Builds a plan (pre message → tool call → post message template).
+        - Applies policy, executes the tool, and generates a post summary.
+        """
         # Derive a session id and fetch prior messages (if any)
         session_id = interaction.get("context", {}).get("session_id", interaction.get("id", ""))
         history = self._history.get(session_id, [])
@@ -174,7 +191,11 @@ class AgentRouter:
 
 
 def _format_order_status_summary(order: dict) -> str:
-    """Create a short, human-friendly summary from an order record."""
+    """Create a short, human-friendly summary from an order record.
+
+    This is domain-specific for the demo. Real systems likely render richer
+    content or defer formatting to a response template system.
+    """
     status = order.get("status", "unknown").replace("_", " ")
     carrier = order.get("carrier")
     eta = order.get("eta") or order.get("delivered_at")
@@ -184,4 +205,3 @@ def _format_order_status_summary(order: dict) -> str:
     if eta:
         parts.append(f"ETA: {eta}")
     return ", ".join(parts)
-
