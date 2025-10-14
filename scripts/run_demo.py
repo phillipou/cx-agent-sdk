@@ -20,10 +20,16 @@ from src.adapters.intents.yaml_registry import YAMLIntentsRegistry
 from src.adapters.llm.openai_provider import OpenAIProvider
 from src.adapters.classifier.llm_intent_classifier import LLMIntentClassifier
 from src.adapters.planner.simple_planner import SimplePlanner
+from src.adapters.memory.in_memory import InMemoryConversationMemory
 from src.tools.check_order_status import make_check_order_status
 
 
 def main() -> None:
+    """Wire components and run a single interaction end-to-end.
+
+    This demo intentionally keeps dependencies minimal so you can see each
+    component's role in the request lifecycle.
+    """
     # Data and tools
     ds = JSONDataSource("data/orders.json")
     executor = LocalExecutor()
@@ -46,6 +52,7 @@ def main() -> None:
         policy=policy,
         executor=executor,
         telemetry=telemetry,
+        memory=InMemoryConversationMemory(max_messages=10),
     )
 
     # Simulate a user asking for order status

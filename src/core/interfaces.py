@@ -57,12 +57,38 @@ class IntentsRegistry(Protocol):
 
 
 class IntentClassifier(Protocol):
-    """Maps a user interaction to an eligible intent and extracts slot values."""
+    """Maps a user interaction to an eligible intent and extracts intent parameters."""
     def classify(
         self, interaction: Interaction, intents: list[Intent], history: list[dict]
     ) -> tuple[Intent | None, dict]: ...
 
 
 class Planner(Protocol):
-    """Converts a chosen intent + slots into an executable plan (steps)."""
-    def plan(self, intent: Intent, interaction: Interaction, slots: dict) -> Plan: ...
+    """Converts a chosen intent + parameters into an executable plan (steps)."""
+    def plan(self, intent: Intent, interaction: Interaction, params: dict) -> Plan: ...
+
+
+class SessionMemoryHandle(Protocol):
+    """Ergonomic per-session memory API (Option A: Session handle façade).
+
+    Keeps history, parameters, and the waiting-for-param flag together so Router
+    code remains readable. Implementations can back this with dicts or a DB.
+    """
+
+    def history(self) -> list[dict]: ...
+    def append(self, message: dict) -> None: ...
+
+    def params(self) -> dict: ...
+    def merge(self, params: dict) -> None: ...
+
+    def waiting(self) -> str | None: ...
+    def set_waiting(self, name: str | None) -> None: ...
+
+    def prune(self, max_messages: int = 10) -> None: ...
+    def clear(self) -> None: ...
+
+
+class ConversationMemory(Protocol):
+    """Factory for per-session memory handles."""
+
+    def for_session(self, session_id: str) -> SessionMemoryHandle: ...

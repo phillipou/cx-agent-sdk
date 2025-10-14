@@ -24,6 +24,7 @@ from src.core.interfaces import (
     PolicyEngine,
     ToolExecutor,
     TelemetrySink,
+    ConversationMemory,
 )
 
 
@@ -41,14 +42,20 @@ class AgentRouter:
         policy: PolicyEngine,
         executor: ToolExecutor,
         telemetry: TelemetrySink,
+        memory: ConversationMemory,
     ) -> None:
+        """Construct the router with swappable components.
+
+        Each dependency implements a `Protocol` so adapters can be swapped
+        without changing orchestration logic.
+        """
         self.intents = intents
         self.classifier = classifier
         self.planner = planner
         self.policy = policy
         self.executor = executor
         self.telemetry = telemetry
-        self._history: dict[str, List[dict]] = {}
+        self.memory = memory
 
     def handle(self, interaction: Interaction) -> AgentResponse:
         """Process a single user interaction and return a response.
@@ -60,7 +67,11 @@ class AgentRouter:
         """
         # Derive a session id and fetch prior messages (if any)
         session_id = interaction.get("context", {}).get("session_id", interaction.get("id", ""))
-        history = self._history.get(session_id, [])
+        # Create a session handle to simplify memory access
+        sesh = self.memory.for_session(session_id)
+        # Append the user message to history for traceability
+        sesh.append({"role": "user", "text": interaction.get("text", ""), "metadata": {}})
+        history = sesh.history()
 
         # 1) Record receipt of the message
         self.telemetry.record(
@@ -70,7 +81,13 @@ class AgentRouter:
                 session_id=session_id,
                 stage="received",
                 level="info",
-                payload={},
+                payload={
+                    "memory": {
+                        "history_count": len(history),
+                        "params_keys": list(sesh.params().keys()),
+                        "waiting_for_param": sesh.waiting(),
+                    }
+                },
             )
         )
 
@@ -88,11 +105,14 @@ class AgentRouter:
         )
 
         # 3) LLM-based classification to pick intent and extract slots
-        intent, slots = self.classifier.classify(interaction, eligible, history)
+        intent, params = self.classifier.classify(interaction, eligible, history)
         if not intent:
             # No supported intent → clarify politely
             msg = "I didn’t recognize a supported request. For now I can check order status."
             return AgentResponse(text=msg)
+        # Merge newly extracted params into memory
+        if params:
+            sesh.merge(params)
         self.telemetry.record(
             TelemetryEvent(
                 timestamp="",
@@ -100,12 +120,12 @@ class AgentRouter:
                 session_id=session_id,
                 stage="intent_classified",
                 level="info",
-                payload={"intent_id": intent.get("id"), "slots_redacted": list(slots.keys())},
+                payload={"intent_id": intent.get("id"), "redacted_params": list(sesh.params().keys())},
             )
         )
 
         # 4) Build a plan with pre/post Respond steps and a ToolCall
-        plan: Plan = self.planner.plan(intent, interaction, slots)
+        plan: Plan = self.planner.plan(intent, interaction, sesh.params())
         self.telemetry.record(
             TelemetryEvent(
                 timestamp="",
@@ -187,6 +207,8 @@ class AgentRouter:
             )
         )
 
+        # Append the agent's final message
+        sesh.append({"role": "agent", "text": final_text, "metadata": {}})
         return AgentResponse(text=final_text, tool_result=tool_result)
 
 
