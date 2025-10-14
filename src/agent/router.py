@@ -68,7 +68,8 @@ class AgentRouter:
         if not intent:
             return AgentResponse(text="I didn’t recognize a supported request. For now I can check order status.")
         plan = self._create_plan(intent, interaction, sesh, session_id)
-        ask_resp = self._maybe_ask_user(plan, interaction, session_id, sesh)
+        # If the plan contains an AskUser step, handle it and return early
+        ask_resp = self._handle_ask_user_step(plan, interaction, session_id, sesh)
         if ask_resp:
             return ask_resp
         self._emit_pre_response(plan, interaction, session_id)
@@ -80,6 +81,12 @@ class AgentRouter:
     # --- Helpers ---
 
     def _init_session(self, interaction: Interaction):
+        """Initialize session state and emit a 'received' telemetry event.
+
+        - Derives `session_id` from `interaction.context.session_id` or falls back to `interaction.id`.
+        - Appends the user message to conversation history.
+        - Returns `(session_id, session_handle, history)`.
+        """
         session_id = interaction.get("context", {}).get("session_id", interaction.get("id", ""))
         sesh = self.memory.for_session(session_id)
         sesh.append({"role": "user", "text": interaction.get("text", ""), "metadata": {}})
@@ -103,6 +110,7 @@ class AgentRouter:
         return session_id, sesh, history
 
     def _eligible_intents(self, interaction: Interaction, session_id: str):
+        """Compute eligible intents for this interaction and emit telemetry."""
         eligible = self.intents.get_eligible(interaction.get("context", {}))
         self.telemetry.record(
             TelemetryEvent(
@@ -117,6 +125,11 @@ class AgentRouter:
         return eligible
 
     def _classify_and_merge(self, interaction: Interaction, intents: List[dict], history: List[dict], sesh, session_id: str):
+        """Classify intent, merge extracted params into memory, and emit telemetry.
+
+        Also clears `waiting` in memory if the awaited parameter is now present.
+        Returns `(intent, params)` from the classifier.
+        """
         intent, params = self.classifier.classify(interaction, intents, history)
         if params:
             sesh.merge(params)
@@ -136,6 +149,7 @@ class AgentRouter:
         return intent, params
 
     def _create_plan(self, intent, interaction, sesh, session_id: str) -> Plan:
+        """Create an execution plan and emit a 'plan_created' telemetry event."""
         plan: Plan = self.planner.plan(intent, interaction, sesh.params())
         self.telemetry.record(
             TelemetryEvent(
@@ -149,7 +163,13 @@ class AgentRouter:
         )
         return plan
 
-    def _maybe_ask_user(self, plan: Plan, interaction: Interaction, session_id: str, sesh):
+    def _handle_ask_user_step(self, plan: Plan, interaction: Interaction, session_id: str, sesh):
+        """Handle an AskUser step by setting waiting state and returning a prompt.
+
+        If the plan contains an `{type: 'ask_user'}` step, set `memory.waiting(param)`,
+        emit a 'respond' telemetry event with the prompt, append to memory, and
+        return `AgentResponse(text=prompt)`. Otherwise return `None`.
+        """
         ask = next((s for s in plan["steps"] if isinstance(s, dict) and s.get("type") == "ask_user"), None)
         if not ask:
             return None
@@ -170,6 +190,7 @@ class AgentRouter:
         return AgentResponse(text=prompt)
 
     def _emit_pre_response(self, plan: Plan, interaction: Interaction, session_id: str) -> None:
+        """Emit a 'plan_communicated' telemetry event for the pre-respond message, if any."""
         pre = next((s for s in plan["steps"] if isinstance(s, dict) and s.get("type") == "respond" and s.get("when") == "pre"), None)
         pre_text = pre.get("message") if pre else None
         if pre_text:
@@ -185,6 +206,12 @@ class AgentRouter:
             )
 
     def _execute_tool_step(self, plan: Plan, interaction: Interaction, history: List[dict], session_id: str):
+        """Run policy validation and execute the tool step if present.
+
+        Emits telemetry for policy check and tool execution. Returns
+        `(tool_result, result_text)` where `result_text` is a human-friendly
+        summary suitable for templating into the post response.
+        """
         tool_step = next((s for s in plan["steps"] if not isinstance(s, dict) or "type" not in s), None)
         result_text = ""
         tool_result = None
@@ -223,10 +250,12 @@ class AgentRouter:
         return tool_result, result_text
 
     def _build_final_text(self, plan: Plan, result_text: str) -> str:
+        """Apply the post-respond template to the tool summary text."""
         post = next((s for s in plan["steps"] if isinstance(s, dict) and s.get("type") == "respond" and s.get("when") == "post"), None)
         return (post.get("message") or "Here’s the result: {summary}").replace("{summary}", result_text) if post else result_text
 
     def _emit_final_response(self, interaction: Interaction, session_id: str, sesh, final_text: str) -> None:
+        """Emit the final 'respond' telemetry and append the agent message to memory."""
         self.telemetry.record(
             TelemetryEvent(
                 timestamp="",
