@@ -65,7 +65,8 @@
 
 ### LLM Setup
 - Set `OPENAI_API_KEY` in your environment.
-- Optional: set `OPENAI_MODEL` (defaults to `gpt-4o-mini`).
+- Choose models programmatically per agent/function (pass `model=` to `OpenAIProvider`).
+  An `OPENAI_MODEL` env var is supported as a fallback but is discouraged.
 - The demo uses the OpenAI provider; see `scripts/run_demo.py`.
 
 ## Coding Style & Naming Conventions

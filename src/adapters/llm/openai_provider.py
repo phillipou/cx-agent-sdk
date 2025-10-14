@@ -7,8 +7,9 @@ classifier expects a structured JSON-like dict with keys:
     {"intent_id": str | None, "params": dict, "missing_params": list, "confidence": float}
 
 We prompt the model to return a strict JSON object. Consumers set the API key
-via the `OPENAI_API_KEY` environment variable and can override the model using
-`OPENAI_MODEL`.
+via the `OPENAI_API_KEY` environment variable. The model should be chosen
+programmatically per agent/function by passing `model=...` to the constructor;
+an `OPENAI_MODEL` env var is supported as a fallback only.
 """
 
 import os
@@ -40,7 +41,8 @@ class OpenAIProvider(LLMProvider):
                 "openai package not available. Install 'openai>=1.0.0' to use OpenAIProvider."
             )
         self.client = OpenAI()
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        # Prefer explicit per-agent model; fall back to env; then to a safe default.
+        self.model = model or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
 
     def generate(self, messages: List[Dict[str, Any]], response_format: Dict | None = None) -> dict:
         """Call the OpenAI Responses API and return a dict.

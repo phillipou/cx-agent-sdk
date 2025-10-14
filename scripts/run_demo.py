@@ -41,7 +41,8 @@ def main() -> None:
 
     # Intents + classifier (LLM-based via OpenAI)
     intents = YAMLIntentsRegistry("config/intents.yaml")
-    llm = OpenAIProvider()
+    # Choose model per agent/function, not globally.
+    llm = OpenAIProvider(model="gpt-4o-mini")
     classifier = LLMIntentClassifier(llm)
     planner = SimplePlanner()
 
