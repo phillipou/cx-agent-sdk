@@ -12,11 +12,16 @@ from src.core.types import Intent, Interaction, Plan, Respond, ToolCall
 
 
 class SimplePlanner(Planner):
-    def plan(self, intent: Intent, interaction: Interaction, slots: dict) -> Plan:
+    def plan(self, intent: Intent, interaction: Interaction, params: dict) -> Plan:
+        """Create a minimal plan: Respond(pre) → ToolCall → Respond(post).
+
+        The post response includes a `{summary}` placeholder that the router
+        replaces after the tool executes.
+        """
         intent_id = intent.get("id", "")
         steps: List[dict] = []
         # Pre-respond
-        order_id = slots.get("order_id")
+        order_id = params.get("order_id")
         pre_msg = (
             f"I’ll check the status of order {order_id}."
             if order_id
@@ -26,8 +31,8 @@ class SimplePlanner(Planner):
 
         # Tool step
         tool_name = intent.get("tool") or ""
-        params = {**slots}
-        steps.append(ToolCall(tool_name=tool_name, params=params))
+        tool_params = {**params}
+        steps.append(ToolCall(tool_name=tool_name, params=tool_params))
 
         # Post-respond template (planner does not know result yet)
         post_msg = (

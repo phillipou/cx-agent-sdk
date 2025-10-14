@@ -4,7 +4,7 @@ from __future__ import annotations
 Implements the `LLMProvider` interface using OpenAI's Responses API. The
 classifier expects a structured JSON-like dict with keys:
 
-    {"intent_id": str | None, "slots": dict, "missing_slots": list, "confidence": float}
+    {"intent_id": str | None, "params": dict, "missing_params": list, "confidence": float}
 
 We prompt the model to return a strict JSON object. Consumers set the API key
 via the `OPENAI_API_KEY` environment variable and can override the model using
@@ -88,5 +88,5 @@ class OpenAIProvider(LLMProvider):
         return {"raw": text}
 
     def route(self, interaction, history):  # pragma: no cover - unused
+        """Compatibility stub; not used in the current design."""
         return {"tool_name": "", "params": {}}
-

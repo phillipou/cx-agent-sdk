@@ -10,5 +10,11 @@ from src.core.types import TelemetryEvent
 
 
 class PrintSink(TelemetrySink):
+    """Telemetry sink that prints structured events to stdout.
+
+    Useful during development to observe the end-to-end flow without a DB.
+    """
+
     def record(self, event: TelemetryEvent) -> None:
+        """Pretty-print the event (without the raw timestamp)."""
         pprint({k: v for k, v in event.items() if k != "timestamp"})

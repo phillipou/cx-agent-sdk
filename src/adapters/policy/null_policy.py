@@ -9,5 +9,8 @@ from src.core.types import ToolCall, Interaction, PolicyDecision
 
 
 class NullPolicyEngine(PolicyEngine):
+    """Accept-all policy for early development and tests."""
+
     def validate(self, call: ToolCall, interaction: Interaction, history: list[dict]) -> PolicyDecision:
+        """Always returns allowed=True; does not inspect inputs."""
         return PolicyDecision(allowed=True, reasons=[])
