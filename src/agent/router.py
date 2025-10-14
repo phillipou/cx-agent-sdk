@@ -113,6 +113,9 @@ class AgentRouter:
         # Merge newly extracted params into memory
         if params:
             sesh.merge(params)
+        # If we were waiting for a specific parameter and it arrived, clear the flag
+        if sesh.waiting() and params.get(sesh.waiting() or ""):
+            sesh.set_waiting(None)
         self.telemetry.record(
             TelemetryEvent(
                 timestamp="",
@@ -136,6 +139,25 @@ class AgentRouter:
                 payload={"intent_id": intent.get("id"), "steps": [s.get("type", "tool_call") if isinstance(s, dict) and "type" in s else "tool_call" for s in plan["steps"]]},
             )
         )
+
+        # If planner asks the user for a missing parameter, set waiting state and return prompt
+        ask = next((s for s in plan["steps"] if isinstance(s, dict) and s.get("type") == "ask_user"), None)
+        if ask:
+            missing_param = ask.get("param")
+            prompt = ask.get("prompt") or "Could you provide the missing information?"
+            sesh.set_waiting(missing_param)
+            self.telemetry.record(
+                TelemetryEvent(
+                    timestamp="",
+                    interaction_id=interaction.get("id", ""),
+                    session_id=session_id,
+                    stage="respond",
+                    level="info",
+                    payload={"message": prompt, "waiting_for_param": missing_param},
+                )
+            )
+            sesh.append({"role": "agent", "text": prompt, "metadata": {"type": "ask_user", "param": missing_param}})
+            return AgentResponse(text=prompt)
 
         # 5) Communicate the plan (pre-respond) to the user
         pre = next((s for s in plan["steps"] if isinstance(s, dict) and s.get("type") == "respond" and s.get("when") == "pre"), None)

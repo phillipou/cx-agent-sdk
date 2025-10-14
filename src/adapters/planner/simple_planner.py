@@ -8,7 +8,7 @@ Translates a chosen intent + parameters into a small, linear plan:
 """
 from typing import List
 from src.core.interfaces import Planner
-from src.core.types import Intent, Interaction, Plan, Respond, ToolCall
+from src.core.types import Intent, Interaction, Plan, Respond, ToolCall, AskUser
 
 
 class SimplePlanner(Planner):
@@ -20,6 +20,19 @@ class SimplePlanner(Planner):
         """
         intent_id = intent.get("id", "")
         steps: List[dict] = []
+
+        # If required parameters are missing, emit an AskUser step to collect the next one.
+        required = intent.get("required_params", []) or []
+        missing = [p for p in required if not params.get(p)]
+        if missing:
+            param = missing[0]
+            # Simple, friendly prompt. Could be extended via config later.
+            prompt = (
+                "What is your order ID?" if param == "order_id" else f"What is your {param}?"
+            )
+            steps.append(AskUser(type="ask_user", param=param, prompt=prompt))
+            return Plan(intent_id=intent_id, steps=steps)
+
         # Pre-respond
         order_id = params.get("order_id")
         pre_msg = (

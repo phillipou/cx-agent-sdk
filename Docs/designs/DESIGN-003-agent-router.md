@@ -30,7 +30,7 @@ Primary implementation: `src/agent/router.py`.
 - IntentClassifier: LLM-powered mapping of interaction → intent + parameters.
 - Planner: Converts chosen intent + parameters into a `Plan` with steps:
   - `Respond(pre)` → `ToolCall` → `Respond(post)` (M1)
-  - Later: `AskUser` when required parameters are missing.
+  - `AskUser` when required parameters are missing (M1.1): emits `{type: "ask_user", param, prompt}` and returns early (no tool call).
 - PolicyEngine: Validates a tool invocation against rules (M1 uses NullPolicy).
 - ToolExecutor: Invokes registered tool handlers with validated params.
 - TelemetrySink: Records structured telemetry at each router stage.
@@ -50,6 +50,7 @@ Sequence (M1 baseline):
 - `Interaction`: `{id, text, customer_id?, context}` (see `src/core/types.py`).
 - `Plan`: `{intent_id, steps: List[PlanStep]}`
   - `PlanStep` ∈ `ToolCall | AskUser | Respond`.
+  - `AskUser`: `{type: "ask_user", param: str, prompt: str}`
 - `TelemetryEvent`: stage ∈ {received, intents_eligible, intent_classified, plan_created,
   plan_communicated, policy_check, tool_execute, respond}; payload is structured.
 - `PlanExecution` (planned): per-step `status` (pending/in_progress/completed/failed) with timestamps.
@@ -77,8 +78,8 @@ Referenced protocols: see `src/core/interfaces.py`.
 ## Policies, Memory, Evaluation
 - Policy: Router defers to `PolicyEngine.validate(call, interaction, history)` and logs the outcome. M1 uses `NullPolicyEngine` (allow-all), Milestone 3 will replace with YAML-driven engine.
 - Memory: Router keys memory by `session_id` (from `interaction.context` or `id`).
-  - M1.1: integrate `ConversationMemory` to load/append/clear; include `history_loaded` and `memory_updated` telemetry.
-  - Classifier may use history to extract missing parameters or disambiguate intents.
+  - M1.1: integrated `ConversationMemory` to load/append/clear; includes memory details in telemetry.
+  - AskUser flow: when planner emits `AskUser`, Router sets `memory.waiting(param)` and returns the prompt as the response. On subsequent messages, if the waiting `param` is provided (via classifier extraction), Router clears waiting and proceeds to plan/execute.
 - Evaluation: Telemetry provides a trace for deterministic evals; later, an `SQLiteSink` will persist events for dashboards and harness.
 
 ## Risks & Mitigations
