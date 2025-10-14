@@ -3,7 +3,7 @@ from __future__ import annotations
 
 Reads `config/intents.yaml` and returns intents that are eligible for the given
 context (e.g., filters by channel). This keeps intent definitions in config so
-you can adjust rollout or slot rules without code changes.
+you can adjust rollout or parameter rules without code changes.
 """
 from typing import List, Dict, Any
 from pathlib import Path

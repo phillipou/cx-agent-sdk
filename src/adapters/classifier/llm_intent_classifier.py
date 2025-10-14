@@ -40,7 +40,7 @@ class LLMIntentClassifier(IntentClassifier):
             {
                 "role": "system",
                 "content": (
-                    "You are a classifier. Pick an intent from the provided list and extract required slots."
+                    "You are a classifier. Pick an intent from the provided list and extract required parameters."
                 ),
             },
             {"role": "user", "content": interaction.get("text", "")},

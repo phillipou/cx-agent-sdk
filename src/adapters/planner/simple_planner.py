@@ -1,7 +1,7 @@
 from __future__ import annotations
 """Simple planner.
 
-Translates a chosen intent + slots into a small, linear plan:
+Translates a chosen intent + parameters into a small, linear plan:
   1) pre `Respond` message (tell the user what will happen)
   2) `ToolCall` with the chosen tool and extracted params
   3) post `Respond` template containing a `{summary}` placeholder

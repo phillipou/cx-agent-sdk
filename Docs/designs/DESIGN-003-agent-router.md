@@ -27,10 +27,10 @@ Primary implementation: `src/agent/router.py`.
 
 ## Architecture & Components
 - IntentsRegistry: returns eligible intents from config by context (channel, rollout).
-- IntentClassifier: LLM-powered mapping of interaction → intent + slots.
-- Planner: Converts chosen intent + slots into a `Plan` with steps:
+- IntentClassifier: LLM-powered mapping of interaction → intent + parameters.
+- Planner: Converts chosen intent + parameters into a `Plan` with steps:
   - `Respond(pre)` → `ToolCall` → `Respond(post)` (M1)
-  - Later: `AskUser` when required slots are missing.
+  - Later: `AskUser` when required parameters are missing.
 - PolicyEngine: Validates a tool invocation against rules (M1 uses NullPolicy).
 - ToolExecutor: Invokes registered tool handlers with validated params.
 - TelemetrySink: Records structured telemetry at each router stage.
@@ -39,7 +39,7 @@ Primary implementation: `src/agent/router.py`.
 Sequence (M1 baseline):
 1) received: record; derive `session_id`; load history (in-memory).
 2) intents_eligible: query registry based on `interaction.context`.
-3) intent_classified: LLM classify intent + extract slots.
+3) intent_classified: LLM classify intent + extract parameters.
 4) plan_created: planner emits Respond(pre), ToolCall, Respond(post).
 5) plan_communicated: emit pre message via telemetry (and optionally UI).
 6) policy_check: validate `ToolCall` (allow/deny with reasons).
@@ -78,13 +78,13 @@ Referenced protocols: see `src/core/interfaces.py`.
 - Policy: Router defers to `PolicyEngine.validate(call, interaction, history)` and logs the outcome. M1 uses `NullPolicyEngine` (allow-all), Milestone 3 will replace with YAML-driven engine.
 - Memory: Router keys memory by `session_id` (from `interaction.context` or `id`).
   - M1.1: integrate `ConversationMemory` to load/append/clear; include `history_loaded` and `memory_updated` telemetry.
-  - Classifier may use history to extract missing slots or disambiguate intents.
+  - Classifier may use history to extract missing parameters or disambiguate intents.
 - Evaluation: Telemetry provides a trace for deterministic evals; later, an `SQLiteSink` will persist events for dashboards and harness.
 
 ## Risks & Mitigations
 - LLM variability: Enforce JSON response format; validate/guard output; add retries/backoff.
-- Slot collection loops: Use `AskUser` with explicit missing slot names; persist state in memory; cap clarification turns; provide safe fallback.
-- Privacy/PII: Redact sensitive slots in telemetry per `config/intents.yaml` redaction rules.
+- Parameter collection loops: Use `AskUser` with explicit missing parameter names; persist state in memory; cap clarification turns; provide safe fallback.
+- Privacy/PII: Redact sensitive parameters in telemetry per `config/intents.yaml` redaction rules.
 - Tool errors: Standardize `ToolResult` with `ok|error`; map errors to friendly copy.
 - Coupling creep: Keep router thin; push business logic to adapters/tools.
 
@@ -105,4 +105,3 @@ Referenced protocols: see `src/core/interfaces.py`.
 - Memory scope: In-memory only for M1 or add optional SQLite-backed memory?
 - Model selection: Per-intent/per-step models vs per-agent default (currently per-agent parameter).
 - Error taxonomy: Standardize error codes for tools/policies for easier eval and UI mapping.
-

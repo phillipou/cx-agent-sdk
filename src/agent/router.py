@@ -61,7 +61,7 @@ class AgentRouter:
         """Process a single user interaction and return a response.
 
         - Determines eligible intents for the context.
-        - Classifies intent and extracts slots via the configured classifier.
+        - Classifies intent and extracts parameters via the configured classifier.
         - Builds a plan (pre message → tool call → post message template).
         - Applies policy, executes the tool, and generates a post summary.
         """
@@ -104,7 +104,7 @@ class AgentRouter:
             )
         )
 
-        # 3) LLM-based classification to pick intent and extract slots
+        # 3) LLM-based classification to pick intent and extract parameters
         intent, params = self.classifier.classify(interaction, eligible, history)
         if not intent:
             # No supported intent → clarify politely
