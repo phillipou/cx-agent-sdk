@@ -126,12 +126,12 @@
 
 **Intents & Planning**
 
-* FR46: Define eligible intents in `config/intents.yaml` (id, description, required slots, tool mapping, constraints)  
+* FR46: Define eligible intents in `config/intents.yaml` (id, description, required parameters, tool mapping, constraints)  
 * FR47: Determine eligible intents per interaction based on context (channel, rollout, customer tier)  
 * FR48: Classify the user message to a supported intent (or none) using LLM  
-* FR49: Extract required slots (e.g., `order_id`) from text or history; prompt user when missing  
+* FR49: Extract required parameters (e.g., `order_id`) from text or history; prompt user when missing  
 * FR50: Produce a plan (ToolCall or AskUser) from the selected intent using LLM  
-* FR51: Support `AskUser` planning step for missing slots  
+* FR51: Support `AskUser` planning step for missing parameters  
 * FR52: Expose intent and plan in telemetry and UIs (trace view)  
 * FR53: Unknown/disabled intents result in safe fallback (clarify, create ticket, or escalate)
 
@@ -220,7 +220,7 @@
   * `PrintSink` (prints events to console)  
 * Implement supporting components:  
   * `IntentsRegistry` (loads from `config/intents.yaml`, filters by context)  
-  * `IntentClassifier` (uses LLMProvider to classify intent and extract slots)  
+  * `IntentClassifier` (uses LLMProvider to classify intent and extract parameters)  
   * `Planner` (uses LLMProvider to generate ToolCall or AskUser)  
 * Wire `AgentRouter` that orchestrates all primitives  
 * Create 1 tool: `check_order_status(order_id)`  
@@ -232,7 +232,7 @@
 
 **Success:**  
 ✅ Single-turn works with complete information  
-✅ Multi-turn works with slot collection via AskUser  
+✅ Multi-turn works with parameter collection via AskUser  
 ✅ LLM-based classification and planning (no regex heuristics)  
 ✅ Conversation history stored and used for context  
 ✅ All 10 telemetry stages logged with structured payloads  
@@ -256,9 +256,9 @@
   * `escalate_to_human(interaction_id, reason, context)`  
 * Add error handling (order not found, invalid state transitions)  
 * Expand `config/intents.yaml` with new intents:  
-  * `refund_request` (slots: order_id, amount, reason)  
-  * `create_ticket_intent` (slots: issue_type, description)  
-  * `escalate` (no required slots)  
+  * `refund_request` (parameters: order_id, amount, reason)  
+  * `create_ticket_intent` (parameters: issue_type, description)  
+  * `escalate` (no required parameters)  
 * Test each tool in isolation with mock data  
 * Test multi-turn scenarios across multiple intents
 

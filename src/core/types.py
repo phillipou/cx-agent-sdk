@@ -39,16 +39,16 @@ class AgentResponse(TypedDict, total=False):
 class Intent(TypedDict, total=False):
     id: str
     description: str
-    required_slots: List[str]
+    required_params: List[str]
     tool: str
-    slot_mapping: Dict[str, str]
+    param_mapping: Dict[str, str]
     constraints: Dict[str, Any]
     redaction: Dict[str, Any]
 
 
 class AskUser(TypedDict):
     type: Literal["ask_user"]
-    slot: str
+    param: str
     prompt: str
 
 

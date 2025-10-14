@@ -62,14 +62,14 @@ Build a minimal agent that resolves customer support interactions using LLM-base
 **IntentClassifier** - LLM-based intent classification
 - `classify(interaction, intents, history) -> ClassificationResult`
 - Uses `LLMProvider` to determine what user wants
-- Extracts slot values (order_id, amount, etc.)
-- Returns missing slots
+- Extracts intent parameters (order_id, amount, etc.)
+- Returns missing parameters
 
 **Planner** - LLM-based execution planning
 - `plan(classification, interaction, history) -> Plan`
 - Uses `LLMProvider` for function calling or prompt generation
-- If slots complete: generates `ToolCall`
-- If slots missing: generates `AskUser` with prompt
+- If parameters complete: generates `ToolCall`
+- If parameters missing: generates `AskUser` with prompt
 
 ---
 
@@ -84,7 +84,7 @@ Interaction = {id: str, text: str, customer_id: str|None, context: dict}
 Intent = {
     id: str,
     description: str,
-    required_slots: list[str],
+    required_params: list[str],
     tool: str,
     constraints: {channels: list, rollout: int, min_tier: str}
 }
@@ -107,14 +107,14 @@ LLMResponse = {
 ```python
 ClassificationResult = {
     intent: Intent | None,
-    extracted_slots: dict,        # Found in current message
-    missing_slots: list[str],     # Still needed
+    extracted_params: dict,       # Found in current message
+    missing_params: list[str],    # Still needed
     confidence: float
 }
 
 ToolCall = {tool_name: str, params: dict}
 
-AskUser = {slot: str, prompt: str}
+AskUser = {param: str, prompt: str}
 Respond = {when: 'pre'|'post'|'error', message: str}
 
 Plan = {
@@ -143,7 +143,7 @@ AgentResponse = {
     text: str,
     tool_result: ToolResult | None,
     needs_user_input: bool,
-    missing_slot: str | None
+    missing_param: str | None
 }
 ```
 
@@ -156,10 +156,10 @@ AgentResponse = {
 1. **Load history** from `ConversationMemory`
 2. **Get eligible intents** from `IntentsRegistry` (filtered by context)
 3. **Classify intent** using `IntentClassifier` (calls `LLMProvider`)
-   - Returns: intent, extracted_slots, missing_slots, confidence
+   - Returns: intent, extracted_params, missing_params, confidence
 4. **Generate plan** using `Planner` (calls `LLMProvider`)
-   - If slots missing: `AskUser`
-   - If slots complete: include `Respond(pre)` then `ToolCall`; planner drafts `Respond(post)` template to summarize the result
+   - If parameters missing: `AskUser`
+   - If parameters complete: include `Respond(pre)` then `ToolCall`; planner drafts `Respond(post)` template to summarize the result
 5. **Validate** with `PolicyEngine` (M1: always allows)
 6. **Communicate plan**: send `Respond(pre)` to the user ("I’ll check your order now…")
 7. **Execute**:
@@ -175,7 +175,7 @@ User: "Where's my order O-12345?"
 
 1. Load history: []
 2. Eligible intents: [order_status]
-3. Classify: intent=order_status, slots={order_id: "O-12345"}, missing=[]
+3. Classify: intent=order_status, params={order_id: "O-12345"}, missing=[]
 4. Plan: [Respond(pre:"I’ll check order O-12345."), ToolCall(check_order_status,{order_id}), Respond(post:"Summary…")]
 5. Communicate plan: send pre-respond
 6. Validate: allowed=True
@@ -192,8 +192,8 @@ Response: "Your order O-12345 is shipped via UPS, ETA Oct 20"
 Turn 1:
 User: "I want to check my order"
 
-1. Classify: intent=order_status, slots={}, missing=[order_id]
-2. Plan: AskUser(slot="order_id", prompt="What's your order ID?")
+1. Classify: intent=order_status, params={}, missing=[order_id]
+2. Plan: AskUser(param="order_id", prompt="What's your order ID?")
 3. Skip execution
 4. Return: "What's your order ID?"
 5. Store in memory
@@ -204,7 +204,7 @@ Turn 2:
 User: "O-12345"
 
 1. Load history: [{user: "check my order"}, {agent: "What's your order ID?"}]
-3. Classify (with context): intent=order_status, slots={order_id: "O-12345"}
+3. Classify (with context): intent=order_status, params={order_id: "O-12345"}
 4. Plan: ToolCall(check_order_status, {order_id: "O-12345"})
 5. Communicate plan: Respond(pre)
 6. Execute: fetch order
@@ -231,13 +231,13 @@ Track each plan step for clarity, retries, and resumability (in-memory in M1; pe
 
 ## Telemetry
 
-Emit structured events at each stage to enable debugging and evaluation. Redact sensitive slots per config.
+Emit structured events at each stage to enable debugging and evaluation. Redact sensitive parameters per config.
 
 Stages: `received`, `intents_eligible`, `intent_classified`, `plan_created`, `plan_communicated`, `policy_check`, `tool_execute`, `respond`.
 
-Payload fields (examples): `{ intent_id, step_index, step_type, status, params_redacted: true, redacted_slots: [...], durations_ms, error_code }`.
+Payload fields (examples): `{ intent_id, step_index, step_type, status, params_redacted: true, redacted_params: [...], durations_ms, error_code }`.
 
-Mask slot values defined under `redaction.slots` in `config/intents.yaml`.
+Mask parameter values defined under `redaction.params` in `config/intents.yaml`.
 
 ---
 
@@ -252,15 +252,15 @@ Mask slot values defined under `redaction.slots` in `config/intents.yaml`.
 - Available intents with descriptions
 - Current message
 
-**Returns:** Structured JSON with intent_id, extracted_slots, missing_slots, confidence
+**Returns:** Structured JSON with intent_id, extracted_params, missing_params, confidence
 
 ### Planner uses LLMProvider
 
-**If slots missing:**
+**If parameters missing:**
 - Calls: `llm.generate(messages)` to generate natural question
 - Returns: `AskUser`
 
-**If slots complete:**
+**If parameters complete:**
 - Calls: `llm.generate(messages, tools={tool_schemas})` with function calling
 - Returns: `ToolCall`
 
@@ -273,7 +273,7 @@ Mask slot values defined under `redaction.slots` in `config/intents.yaml`.
 intents:
   - id: order_status
     description: Retrieve shipping/delivery info for a given order
-    required_slots: [order_id]
+    required_params: [order_id]
     tool: check_order_status
     constraints:
       channels: [chat]
@@ -308,7 +308,7 @@ Every interaction logs these stages in order:
 1. `received` - Interaction received
 2. `history_loaded` - Conversation history retrieved (count)
 3. `intents_eligible` - Eligible intents determined (list)
-4. `intent_classified` - Intent + slots extracted (intent_id, confidence, slots)
+4. `intent_classified` - Intent + parameters extracted (intent_id, confidence, params)
 5. `plan_created` - ToolCall or AskUser generated
 6. `plan_type` - Type: 'tool_call' or 'ask_user'
 7. `policy_check` - Policy validation result (allowed, violations)
@@ -358,7 +358,7 @@ assert "shipped" in response.text.lower()
 assert response.needs_user_input == False
 ```
 
-**Test 2: Multi-turn with slot collection**
+**Test 2: Multi-turn with parameter collection**
 ```python
 # Turn 1
 response1 = router.resolve(
