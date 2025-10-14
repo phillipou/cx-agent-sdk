@@ -60,20 +60,30 @@ class AgentRouter:
     def handle(self, interaction: Interaction) -> AgentResponse:
         """Process a single user interaction and return a response.
 
-        - Determines eligible intents for the context.
-        - Classifies intent and extracts parameters via the configured classifier.
-        - Builds a plan (pre message → tool call → post message template).
-        - Applies policy, executes the tool, and generates a post summary.
+        Decomposed into small helpers to keep orchestration readable and testable.
         """
-        # Derive a session id and fetch prior messages (if any)
+        session_id, sesh, history = self._init_session(interaction)
+        eligible = self._eligible_intents(interaction, session_id)
+        intent, _ = self._classify_and_merge(interaction, eligible, history, sesh, session_id)
+        if not intent:
+            return AgentResponse(text="I didn’t recognize a supported request. For now I can check order status.")
+        plan = self._create_plan(intent, interaction, sesh, session_id)
+        ask_resp = self._maybe_ask_user(plan, interaction, session_id, sesh)
+        if ask_resp:
+            return ask_resp
+        self._emit_pre_response(plan, interaction, session_id)
+        tool_result, result_text = self._execute_tool_step(plan, interaction, history, session_id)
+        final_text = self._build_final_text(plan, result_text)
+        self._emit_final_response(interaction, session_id, sesh, final_text)
+        return AgentResponse(text=final_text, tool_result=tool_result)
+
+    # --- Helpers ---
+
+    def _init_session(self, interaction: Interaction):
         session_id = interaction.get("context", {}).get("session_id", interaction.get("id", ""))
-        # Create a session handle to simplify memory access
         sesh = self.memory.for_session(session_id)
-        # Append the user message to history for traceability
         sesh.append({"role": "user", "text": interaction.get("text", ""), "metadata": {}})
         history = sesh.history()
-
-        # 1) Record receipt of the message
         self.telemetry.record(
             TelemetryEvent(
                 timestamp="",
@@ -90,8 +100,9 @@ class AgentRouter:
                 },
             )
         )
+        return session_id, sesh, history
 
-        # 2) Determine eligible intents from config/context
+    def _eligible_intents(self, interaction: Interaction, session_id: str):
         eligible = self.intents.get_eligible(interaction.get("context", {}))
         self.telemetry.record(
             TelemetryEvent(
@@ -103,31 +114,28 @@ class AgentRouter:
                 payload={"eligible": [it.get("id") for it in eligible]},
             )
         )
+        return eligible
 
-        # 3) LLM-based classification to pick intent and extract parameters
-        intent, params = self.classifier.classify(interaction, eligible, history)
-        if not intent:
-            # No supported intent → clarify politely
-            msg = "I didn’t recognize a supported request. For now I can check order status."
-            return AgentResponse(text=msg)
-        # Merge newly extracted params into memory
+    def _classify_and_merge(self, interaction: Interaction, intents: List[dict], history: List[dict], sesh, session_id: str):
+        intent, params = self.classifier.classify(interaction, intents, history)
         if params:
             sesh.merge(params)
-        # If we were waiting for a specific parameter and it arrived, clear the flag
         if sesh.waiting() and params.get(sesh.waiting() or ""):
             sesh.set_waiting(None)
-        self.telemetry.record(
-            TelemetryEvent(
-                timestamp="",
-                interaction_id=interaction.get("id", ""),
-                session_id=session_id,
-                stage="intent_classified",
-                level="info",
-                payload={"intent_id": intent.get("id"), "redacted_params": list(sesh.params().keys())},
+        if intent:
+            self.telemetry.record(
+                TelemetryEvent(
+                    timestamp="",
+                    interaction_id=interaction.get("id", ""),
+                    session_id=session_id,
+                    stage="intent_classified",
+                    level="info",
+                    payload={"intent_id": intent.get("id"), "redacted_params": list(sesh.params().keys())},
+                )
             )
-        )
+        return intent, params
 
-        # 4) Build a plan with pre/post Respond steps and a ToolCall
+    def _create_plan(self, intent, interaction, sesh, session_id: str) -> Plan:
         plan: Plan = self.planner.plan(intent, interaction, sesh.params())
         self.telemetry.record(
             TelemetryEvent(
@@ -139,27 +147,29 @@ class AgentRouter:
                 payload={"intent_id": intent.get("id"), "steps": [s.get("type", "tool_call") if isinstance(s, dict) and "type" in s else "tool_call" for s in plan["steps"]]},
             )
         )
+        return plan
 
-        # If planner asks the user for a missing parameter, set waiting state and return prompt
+    def _maybe_ask_user(self, plan: Plan, interaction: Interaction, session_id: str, sesh):
         ask = next((s for s in plan["steps"] if isinstance(s, dict) and s.get("type") == "ask_user"), None)
-        if ask:
-            missing_param = ask.get("param")
-            prompt = ask.get("prompt") or "Could you provide the missing information?"
-            sesh.set_waiting(missing_param)
-            self.telemetry.record(
-                TelemetryEvent(
-                    timestamp="",
-                    interaction_id=interaction.get("id", ""),
-                    session_id=session_id,
-                    stage="respond",
-                    level="info",
-                    payload={"message": prompt, "waiting_for_param": missing_param},
-                )
+        if not ask:
+            return None
+        missing_param = ask.get("param")
+        prompt = ask.get("prompt") or "Could you provide the missing information?"
+        sesh.set_waiting(missing_param)
+        self.telemetry.record(
+            TelemetryEvent(
+                timestamp="",
+                interaction_id=interaction.get("id", ""),
+                session_id=session_id,
+                stage="respond",
+                level="info",
+                payload={"message": prompt, "waiting_for_param": missing_param},
             )
-            sesh.append({"role": "agent", "text": prompt, "metadata": {"type": "ask_user", "param": missing_param}})
-            return AgentResponse(text=prompt)
+        )
+        sesh.append({"role": "agent", "text": prompt, "metadata": {"type": "ask_user", "param": missing_param}})
+        return AgentResponse(text=prompt)
 
-        # 5) Communicate the plan (pre-respond) to the user
+    def _emit_pre_response(self, plan: Plan, interaction: Interaction, session_id: str) -> None:
         pre = next((s for s in plan["steps"] if isinstance(s, dict) and s.get("type") == "respond" and s.get("when") == "pre"), None)
         pre_text = pre.get("message") if pre else None
         if pre_text:
@@ -174,13 +184,12 @@ class AgentRouter:
                 )
             )
 
-        # 6) Execute the tool step (single ToolCall for M1)
+    def _execute_tool_step(self, plan: Plan, interaction: Interaction, history: List[dict], session_id: str):
         tool_step = next((s for s in plan["steps"] if not isinstance(s, dict) or "type" not in s), None)
         result_text = ""
         tool_result = None
         if tool_step:
             call: ToolCall = tool_step  # type: ignore
-            # Validate via policy (NullPolicyEngine allows all)
             decision = self.policy.validate(call, interaction, history)
             self.telemetry.record(
                 TelemetryEvent(
@@ -204,7 +213,6 @@ class AgentRouter:
                         payload={"ok": tool_result.get("ok", False), "tool": call.get("tool_name")},
                     )
                 )
-                # Summarize the result for the post message
                 if tool_result.get("ok") and tool_result.get("data"):
                     data = tool_result.get("data", {})
                     result_text = _format_order_status_summary(data)
@@ -212,12 +220,13 @@ class AgentRouter:
                     result_text = "I couldn’t find that order."
             else:
                 result_text = "This action isn’t allowed by policy."
+        return tool_result, result_text
 
-        # 7) Build the final response using the post-respond template
+    def _build_final_text(self, plan: Plan, result_text: str) -> str:
         post = next((s for s in plan["steps"] if isinstance(s, dict) and s.get("type") == "respond" and s.get("when") == "post"), None)
-        final_text = (post.get("message") or "Here’s the result: {summary}").replace("{summary}", result_text) if post else result_text
+        return (post.get("message") or "Here’s the result: {summary}").replace("{summary}", result_text) if post else result_text
 
-        # 8) Emit final telemetry and return
+    def _emit_final_response(self, interaction: Interaction, session_id: str, sesh, final_text: str) -> None:
         self.telemetry.record(
             TelemetryEvent(
                 timestamp="",
@@ -228,10 +237,7 @@ class AgentRouter:
                 payload={"message": final_text},
             )
         )
-
-        # Append the agent's final message
         sesh.append({"role": "agent", "text": final_text, "metadata": {}})
-        return AgentResponse(text=final_text, tool_result=tool_result)
 
 
 def _format_order_status_summary(order: dict) -> str:
