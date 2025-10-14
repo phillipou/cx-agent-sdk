@@ -19,11 +19,18 @@
   - `adapters/planner/` (`simple_planner.py`)
   - `adapters/llm/` (`openai_provider.py`)
   - `src/tools/` (tool schemas + functions)
-  - `src/ui/` (Streamlit apps: `chat.py`, `dashboard.py`)
+- `src/ui/` (Streamlit apps: `chat.py`, `dashboard.py`)
 - `config/`: Runtime configs (e.g., `policies.yaml`).
 - `scripts/`: CLIs (e.g., `run_eval.py`, `seed_database.py`).
 - `data/`: Mock datasets (orders/tickets, SQLite).
 - `tests/`: Pytest suites.
+  
+## Memory Component
+- `src/adapters/memory/`: Conversation memory adapters
+  - `in_memory.py`: `InMemoryConversationMemory` (Session handle façade)
+- Recommended API (M1): `memory.for_session(session_id)` returns a handle:
+  - `history()`, `append(message)`, `params()`, `merge(params)`, `waiting()`, `set_waiting(name|None)`, `prune()`, `clear()`.
+  - Prefer this façade for readability; swap the backend later (SQLite) without changing Router logic.
 
 ## Documentation Workflow
 - Source of truth: `Docs/PRD.md`.
@@ -31,7 +38,23 @@
 - New decision: copy `Docs/templates/ADR-TEMPLATE.md` → `Docs/adr/ADR-<NNN>-<slug>.md`.
 - Branch/PR: `docs/<topic>`; title `docs(design|adr): <summary>`; include “Open Questions”.
 - Reviews: require PM + Eng sign-off; ADRs are immutable (supersede with a new ADR).
-- Intents & planning: define in `config/intents.yaml`; keep slot extraction rules in config; redact sensitive slots in telemetry.
+- Intents & planning: define in `config/intents.yaml`; keep parameter extraction rules in config; redact sensitive parameters in telemetry.
+
+## Task Tracking (Docs/tasks.md)
+- Location: `Docs/tasks.md` (single Markdown file tracked in git).
+- Format: checklist per task with metadata and nested subtasks.
+- Status values: `todo | in_progress | blocked | review | done`.
+- Workflow:
+  - Before starting: add a task with goal, owner, links to PRD/design.
+  - During work: break into subtasks, update status daily, link active PRs.
+  - After merge: mark `done`, add follow-ups or ADR links if decisions changed.
+  - On completion: immediately update `Docs/tasks.md`; move the item (or summarize) to “Recently Completed” with date/PR link.
+- Example:
+  - [in_progress] M1: LLM intent classification — owner @you
+    - [done] Scaffold `src/adapters/...`
+    - [in_progress] `LLMIntentClassifier` + Fake provider
+    - [todo] Wire `AgentRouter.handle` pre/post respond
+    - Links: PR #123, design Docs/designs/DESIGN-001-milestone-1-core-primitives.md
 
 ## Build, Test, and Development Commands
 - Create env + install: `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
@@ -52,11 +75,12 @@
 - Formatting/linting (if configured): `black .` and `ruff check .` before PRs.
 
 ## Documentation & Comments
+- Every function/method: include a concise docstring (1–3 lines) explaining purpose, key inputs/outputs, and notable side effects. For trivial helpers, add a one-line comment at minimum.
 - Docstrings: required on public modules/classes/functions; include param/return types and brief examples when helpful.
 - Inline comments: be generous—explain the “why” behind non-obvious logic (routing, planning, policy decisions) and reference `Docs/designs/*` or ADR IDs.
 - Traceability: when behavior changes, update or link to the relevant design/ADR; add file paths in comments for quick navigation.
 - Readability first: avoid clever one-liners; prefer explicit variable names and small, named helpers with comments.
-- Telemetry as docs: emit clear stages and reasons; redact sensitive slots per `config/intents.yaml`.
+- Telemetry as docs: emit clear stages and reasons; redact sensitive parameters per `config/intents.yaml`.
 
 ## Testing Guidelines
 - Framework: `pytest` with `tests/` mirroring `src/` layout.
