@@ -23,6 +23,14 @@ from src.adapters.planner.simple_planner import SimplePlanner
 from src.adapters.memory.in_memory import InMemoryConversationMemory
 from src.tools.check_order_status import make_check_order_status
 
+# Load environment variables from .env if present (developer convenience)
+try:
+    from dotenv import load_dotenv  # type: ignore
+
+    load_dotenv()
+except Exception:
+    pass
+
 
 def main() -> None:
     """Wire components and run a single interaction end-to-end.

@@ -4,7 +4,8 @@ intents:
     required_params: [order_id]
     tool: check_order_status
     param_mapping:
-      order_id: "(?i)\bO-\d+\b"
+      # Use double-escaped backslashes with double quotes to avoid YAML escape issues
+      order_id: "(?i)\\bO-\\d+\\b"
     constraints:
       channels: [chat]
       rollout: 100

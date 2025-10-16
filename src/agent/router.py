@@ -66,7 +66,42 @@ class AgentRouter:
         eligible = self._eligible_intents(interaction, session_id)
         intent, _ = self._classify_and_merge(interaction, eligible, history, sesh, session_id)
         if not intent:
-            return AgentResponse(text="I didn’t recognize a supported request. For now I can check order status.")
+            # Unknown intent: ask LLM to draft a concise clarification with escalation offer.
+            llm = getattr(self.classifier, "llm", None)
+            draft = None
+            if llm is not None:
+                try:
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a helpful support agent. The user request didn’t match a known intent.\n"
+                                "Write a brief, friendly one-sentence clarification that asks what they need, and ALWAYS end with: \"Would you like me to loop in a human support agent?\"\n"
+                                "Do not invent details. Keep it under 25 words."
+                            ),
+                        },
+                        {"role": "user", "content": interaction.get("text", "")},
+                    ]
+                    resp = llm.generate(messages)  # type: ignore[attr-defined]
+                    draft = resp.get("raw") if isinstance(resp, dict) else None
+                except Exception:
+                    draft = None
+            fallback_text = (
+                draft
+                or "I didn’t recognize that yet — could you share a bit more? Would you like me to loop in a human support agent?"
+            )
+            self.telemetry.record(
+                TelemetryEvent(
+                    timestamp="",
+                    interaction_id=interaction.get("id", ""),
+                    session_id=session_id,
+                    stage="respond",
+                    level="info",
+                    payload={"message": fallback_text, "fallback": True, "unknown_intent": True},
+                )
+            )
+            sesh.append({"role": "agent", "text": fallback_text, "metadata": {"type": "fallback", "unknown_intent": True}})
+            return AgentResponse(text=fallback_text)
         plan = self._create_plan(intent, interaction, sesh, session_id)
         # If the plan contains an AskUser step, handle it and return early
         ask_resp = self._handle_ask_user_step(plan, interaction, session_id, sesh)
@@ -144,6 +179,17 @@ class AgentRouter:
                     stage="intent_classified",
                     level="info",
                     payload={"intent_id": intent.get("id"), "redacted_params": list(sesh.params().keys())},
+                )
+            )
+        else:
+            self.telemetry.record(
+                TelemetryEvent(
+                    timestamp="",
+                    interaction_id=interaction.get("id", ""),
+                    session_id=session_id,
+                    stage="intent_classified",
+                    level="info",
+                    payload={"intent_id": None, "unknown_intent": True},
                 )
             )
         return intent, params

@@ -5,7 +5,7 @@ The project favors simple, explicit `TypedDict` structures for message passing
 between components. This keeps adapters loosely coupled and easy to test.
 """
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, TypedDict, Literal
+from typing import Any, Dict, List, Optional, TypedDict, Literal, Union
 
 
 class Interaction(TypedDict, total=False):
@@ -58,7 +58,7 @@ class Respond(TypedDict):
     message: str
 
 
-PlanStep = ToolCall | AskUser | Respond
+PlanStep = Union[ToolCall, AskUser, Respond]
 
 
 class Plan(TypedDict):
